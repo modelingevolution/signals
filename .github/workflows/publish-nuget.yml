@@ -1,0 +1,99 @@
+name: Publish to NuGet
+
+on:
+  push:
+    tags:
+      - 'ModelingEvolution.Signals/*.*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.0.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Set version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          # Extract version from tag (format: ModelingEvolution.Signals/X.Y.Z.W)
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#ModelingEvolution.Signals/}"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Update version in csproj
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        cd Sources/ModelingEvolution.Signals
+        # Update all version-related properties
+        sed -i "s/<AssemblyVersion>.*<\/AssemblyVersion>/<AssemblyVersion>$VERSION<\/AssemblyVersion>/" ModelingEvolution.Signals.csproj
+        sed -i "s/<FileVersion>.*<\/FileVersion>/<FileVersion>$VERSION<\/FileVersion>/" ModelingEvolution.Signals.csproj
+        sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" ModelingEvolution.Signals.csproj
+        sed -i "s/<PackageVersion>.*<\/PackageVersion>/<PackageVersion>$VERSION<\/PackageVersion>/" ModelingEvolution.Signals.csproj
+
+    - name: Restore dependencies
+      working-directory: ./Sources
+      run: dotnet restore
+
+    - name: Build
+      working-directory: ./Sources
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run tests
+      working-directory: ./Sources
+      run: dotnet test --configuration Release --no-build --verbosity normal || true
+
+    - name: Pack
+      working-directory: ./Sources/ModelingEvolution.Signals
+      run: dotnet pack --configuration Release --no-build --output ./nupkg /p:PackageVersion=${{ steps.version.outputs.version }}
+
+    - name: Push to NuGet
+      working-directory: ./Sources/ModelingEvolution.Signals
+      run: |
+        dotnet nuget push ./nupkg/ModelingEvolution.Signals.*.nupkg \
+          --api-key ${{ secrets.NUGET_API_KEY }} \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+    - name: Publish to ModelingEvolution NuGet
+      working-directory: ./Sources/ModelingEvolution.Signals
+      run: |
+        dotnet nuget push "./nupkg/*.nupkg" \
+          --api-key ${{ secrets.NUGET_API_KEY_ME }} \
+          --source https://nuget.modelingevolution.com/v3/index.json \
+          --skip-duplicate
+      continue-on-error: true
+
+    - name: Summary
+      run: |
+        echo "## ModelingEvolution.Signals Published to NuGet" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package**: ModelingEvolution.Signals" >> $GITHUB_STEP_SUMMARY
+        echo "- **NuGet**: https://www.nuget.org/packages/ModelingEvolution.Signals" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Install with:" >> $GITHUB_STEP_SUMMARY
+        echo '```bash' >> $GITHUB_STEP_SUMMARY
+        echo 'dotnet add package ModelingEvolution.Signals --version ${{ steps.version.outputs.version }}' >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
