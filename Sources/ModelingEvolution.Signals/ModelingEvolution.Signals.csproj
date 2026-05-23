@@ -12,6 +12,7 @@
     <Version>1.0.0</Version>
     <FileVersion>1.0.0</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
