@@ -9,10 +9,8 @@ public sealed class WritableSignalTests
     private static SignalMetadata IntMetadata() => new(
         Name: "test.signal",
         Uri: new Uri("signal://test/value"),
-        ValueType: typeof(int),
         Unit: "V",
-        Cadence: new SignalCadence.Periodic(Frequency<float>.FromHertz(10f)),
-        PayloadBytesHint: 4);
+        Cadence: Frequency<float>.FromHertz(10f));
 
     [Fact]
     public void Value_HasNoValue_BeforeFirstSet()
@@ -149,32 +147,107 @@ public sealed class WritableSignalTests
     }
 
     [Fact]
-    public void SignalCadence_Periodic_RoundTrip()
+    public void Cadence_Periodic_RoundTrip()
     {
-        var cadence = new SignalCadence.Periodic(Frequency<float>.FromHertz(10f));
+        var cadence = Frequency<float>.FromHertz(10f);
+        var metadata = new SignalMetadata(
+            Name: "test",
+            Uri: new Uri("signal://test"),
+            Unit: "Hz",
+            Cadence: cadence);
 
-        cadence.Rate.Hertz.Should().BeApproximately(10f, 1e-6f);
+        metadata.Cadence.Should().NotBeNull();
+        metadata.Cadence!.Value.Hertz.Should().BeApproximately(10f, 1e-6f);
+    }
+
+    [Fact]
+    public void Cadence_Null_Allowed_ForEventDrivenOrUnknown()
+    {
+        var metadata = new SignalMetadata(
+            Name: "test",
+            Uri: new Uri("signal://test"),
+            Unit: null,
+            Cadence: null);
+
+        metadata.Cadence.Should().BeNull();
     }
 
     [Fact]
     public void SignalMetadata_PropertiesPreserved()
     {
         var uri = new Uri("signal://device/temperature");
-        var cadence = new SignalCadence.Periodic(Frequency<float>.FromHertz(50f));
+        var cadence = Frequency<float>.FromHertz(50f);
 
         var metadata = new SignalMetadata(
             Name: "temperature",
             Uri: uri,
-            ValueType: typeof(double),
             Unit: "C",
-            Cadence: cadence,
-            PayloadBytesHint: 8);
+            Cadence: cadence);
 
         metadata.Name.Should().Be("temperature");
         metadata.Uri.Should().Be(uri);
-        metadata.ValueType.Should().Be(typeof(double));
         metadata.Unit.Should().Be("C");
-        metadata.Cadence.Should().BeSameAs(cadence);
-        metadata.PayloadBytesHint.Should().Be(8);
+        metadata.Cadence.Should().Be(cadence);
+    }
+
+    [Fact]
+    public void Set_T_And_Set_Sample_ProduceEquivalentObservableBehavior()
+    {
+        // Both overloads must end at the same code path; observers see Sample<T> either way.
+        var signalA = new WritableSignal<int>(IntMetadata());
+        var signalB = new WritableSignal<int>(IntMetadata());
+        var receivedA = new List<Sample<int>>();
+        var receivedB = new List<Sample<int>>();
+
+        using var _a = signalA.Subscribe(receivedA.Add);
+        using var _b = signalB.Subscribe(receivedB.Add);
+
+        signalA.Set(42);
+        signalB.Set(new Sample<int>(Sample<int>.NowUs, 42));
+
+        receivedA.Should().HaveCount(1);
+        receivedB.Should().HaveCount(1);
+        receivedA[0].Value.Should().Be(receivedB[0].Value);
+        signalA.Value.Should().Be(signalB.Value);
+        signalA.HasValue.Should().Be(signalB.HasValue);
+    }
+
+    [Fact]
+    public void Set_Sample_PreservesProvidedTimestamp()
+    {
+        // Set(Sample<T>) lets callers thread an external timestamp through unchanged.
+        var signal = new WritableSignal<int>(IntMetadata());
+        var received = new List<Sample<int>>();
+        using var _ = signal.Subscribe(received.Add);
+        var fixedTs = 1_234_567L;
+
+        signal.Set(new Sample<int>(fixedTs, 99));
+
+        received.Should().HaveCount(1);
+        received[0].TimestampUs.Should().Be(fixedTs);
+        received[0].Value.Should().Be(99);
+    }
+
+    [Fact]
+    public void Set_Sample_RespectsDistinctUntilChanged()
+    {
+        var signal = new WritableSignal<int>(IntMetadata());
+        var callCount = 0;
+        using var _ = signal.Subscribe(_ => callCount++);
+
+        signal.Set(new Sample<int>(100L, 5));
+        signal.Set(new Sample<int>(200L, 5));
+
+        callCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void Sample_NowUs_ReturnsPositiveMonotonic()
+    {
+        var t1 = Sample<int>.NowUs;
+        var t2 = Sample<int>.NowUs;
+
+        t1.Should().BeGreaterThan(0);
+        t2.Should().BeGreaterThanOrEqualTo(t1);
     }
 }

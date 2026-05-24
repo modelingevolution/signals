@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Diagnostics;
 
 namespace ModelingEvolution.Signals;
 
@@ -27,13 +26,14 @@ public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>, IDisposable
         }
     }
 
-    public void Set(T value)
+    public void Set(T value) => Set(new Sample<T>(Sample<T>.NowUs, value));
+
+    public void Set(Sample<T> sample)
     {
         if (_disposed) return;
         var current = Volatile.Read(ref _current);
-        if (current is not null && EqualityComparer<T>.Default.Equals(current.Value, value)) return;
-        Volatile.Write(ref _current, new Holder(value));
-        var sample = new Sample<T>(GetTimestampUs(), value);
+        if (current is not null && EqualityComparer<T>.Default.Equals(current.Value, sample.Value)) return;
+        Volatile.Write(ref _current, new Holder(sample.Value));
         var subs = _subscribers;
         foreach (var cb in subs) cb(sample);
     }
@@ -50,9 +50,6 @@ public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>, IDisposable
         _disposed = true;
         ImmutableInterlocked.Update(ref _subscribers, _ => ImmutableArray<Action<Sample<T>>>.Empty);
     }
-
-    private static long GetTimestampUs() =>
-        (long)(Stopwatch.GetTimestamp() * (1_000_000.0 / Stopwatch.Frequency));
 
     private sealed class Subscription(WritableSignal<T> signal, Action<Sample<T>> callback) : IDisposable
     {
