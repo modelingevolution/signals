@@ -26,7 +26,7 @@ public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>, IDisposable
         }
     }
 
-    public void Set(T value) => Set(new Sample<T>(Sample<T>.NowUs, value));
+    public void Set(T value) => Set(new Sample<T>(Sample.NowUs, value));
 
     public void Set(Sample<T> sample)
     {

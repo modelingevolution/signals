@@ -203,7 +203,7 @@ public sealed class WritableSignalTests
         using var _b = signalB.Subscribe(receivedB.Add);
 
         signalA.Set(42);
-        signalB.Set(new Sample<int>(Sample<int>.NowUs, 42));
+        signalB.Set(new Sample<int>(Sample.NowUs, 42));
 
         receivedA.Should().HaveCount(1);
         receivedB.Should().HaveCount(1);
@@ -244,8 +244,8 @@ public sealed class WritableSignalTests
     [Fact]
     public void Sample_NowUs_ReturnsPositiveMonotonic()
     {
-        var t1 = Sample<int>.NowUs;
-        var t2 = Sample<int>.NowUs;
+        var t1 = Sample.NowUs;
+        var t2 = Sample.NowUs;
 
         t1.Should().BeGreaterThan(0);
         t2.Should().BeGreaterThanOrEqualTo(t1);
