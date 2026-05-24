@@ -3,13 +3,14 @@ using System.Diagnostics;
 
 namespace ModelingEvolution.Signals;
 
-public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>
+public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>, IDisposable
 {
     private sealed record Holder(T Value);
 
     private readonly SignalMetadata _metadata;
     private Holder? _current;
     private ImmutableArray<Action<Sample<T>>> _subscribers = ImmutableArray<Action<Sample<T>>>.Empty;
+    private volatile bool _disposed;
 
     public WritableSignal(SignalMetadata metadata) => _metadata = metadata;
 
@@ -28,6 +29,7 @@ public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>
 
     public void Set(T value)
     {
+        if (_disposed) return;
         var current = Volatile.Read(ref _current);
         if (current is not null && EqualityComparer<T>.Default.Equals(current.Value, value)) return;
         Volatile.Write(ref _current, new Holder(value));
@@ -40,6 +42,13 @@ public sealed class WritableSignal<T> : ISignal<T>, ISignalSink<T>
     {
         ImmutableInterlocked.Update(ref _subscribers, s => s.Add(onSample));
         return new Subscription(this, onSample);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        ImmutableInterlocked.Update(ref _subscribers, _ => ImmutableArray<Action<Sample<T>>>.Empty);
     }
 
     private static long GetTimestampUs() =>

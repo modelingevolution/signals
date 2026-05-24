@@ -106,6 +106,49 @@ public sealed class WritableSignalTests
     }
 
     [Fact]
+    public void Dispose_ClearsAllSubscribers()
+    {
+        var signal = new WritableSignal<int>(IntMetadata());
+        var aCount = 0;
+        var bCount = 0;
+
+        signal.Subscribe(_ => aCount++);
+        signal.Subscribe(_ => bCount++);
+        signal.Dispose();
+        signal.Set(1);
+
+        aCount.Should().Be(0);
+        bCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void Set_AfterDispose_IsSilentNoOp()
+    {
+        var signal = new WritableSignal<int>(IntMetadata());
+
+        signal.Set(7);
+        signal.Dispose();
+        signal.Set(42);
+
+        signal.Value.Should().Be(7);
+    }
+
+    [Fact]
+    public void Dispose_IsIdempotent()
+    {
+        var signal = new WritableSignal<int>(IntMetadata());
+
+        var act = () =>
+        {
+            signal.Dispose();
+            signal.Dispose();
+            signal.Dispose();
+        };
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void SignalCadence_Periodic_RoundTrip()
     {
         var cadence = new SignalCadence.Periodic(Frequency<float>.FromHertz(10f));
